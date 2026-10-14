@@ -22,8 +22,7 @@
             "type": "string",
             "description": "Path to csv file or markdown file."
           }
-        },
-        "required": ["path_or_markdown"]
+        }
       }
     },
     {

@@ -29,6 +29,7 @@ import io
 import pandas as pd
 import matplotlib
 import csv
+import os
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -123,14 +124,32 @@ class GnomeAgentAgent(PrometheusAgent):
         # ------------------------------------------------------------------
         # 3. Do your actual work here.  Replace this with real logic.
         # ------------------------------------------------------------------
-        if input_data['skill_id'] == 'markdown_to_csv':
-            markdown_text = await read_in_markdown(path_or_markdown=params.get('path_or_markdown'))
-            list_of_tuples = markdown_to_csv(markdown_text=markdown_text)
-            return await send_to_deeplynx(context=context,
+        skill_id = str(params.get("skill_id")).strip()
+        artifact_id = str(params.get("artifact_id")).strip()
+
+        if not artifact_id:
+            ...
+
+        artifacts = (params.get("artifacts") if isinstance(params.get("artifacts"), list) else None)
+
+        path = self.get_artifact_file_path(artifact_id, context=context, artifacts=artifacts)
+
+        source_ref = self.resolve_artifact_reference(self._context_conversation_id(context), artifact_id)
+        if not source_ref:
+            return {
+                "status": "error",
+                "conversation_id": self._context_conversation_id(context),
+                "message": f"Artifact '{artifact_id}' was not found in this conversation.",
+            }
+        print(path)
+        if skill_id == 'markdown_to_csv':
+            markdown_text = await self.read_in_markdown(path_or_markdown=path)
+            list_of_tuples = await self.markdown_to_csv(markdown_text=markdown_text)
+            return await self.send_to_deeplynx(context=context,
                                           event_queue=event_queue,
                                           message="Reading in markdown to create csv",
                                           dict_of_csv=list_of_tuples)
-        if input_data['skill_id'] == 'plot_csv':
+        if skill_id == 'plot_csv':
             return await ...
         return {"status": "Error", "error": "unknown skill"}
 
@@ -221,7 +240,7 @@ class GnomeAgentAgent(PrometheusAgent):
             list_of_tuples.append((caption,  df))
         return list_of_tuples
 
-    def send_to_deeplynx(self, context, event_queue, message, list_of_tuples):
+    def send_to_deeplynx(self, context, event_queue, message, list_of_tuples, base_path='./'):
         """
         Take the dictionary of captions and csvs and send this to DeepLynx
         Args:
@@ -237,13 +256,15 @@ class GnomeAgentAgent(PrometheusAgent):
         results = []
         for caption, df in list_of_tuples:
             rows = df.values.tolist()
+            file_path = os.path.join(base_path, f'table_{tab_num}.csv')
 
             # Create a DeepLynx artifact which contains the
-            table_id = self.send_json_artifact(
+            table_id = self.send_deeplynx_artifact(
                 context,
                 event_queue,
-                {"caption": caption, "columns": df.columns, "rows": rows},
-                name=f"table {tab_num}",
+                name=f'Table {tab_num}',
+                file_path=file_path,
+                description=f'Table file for Table{tab_num}',
                 catalog_artifact=True,
             )
             results.append(table_id)
